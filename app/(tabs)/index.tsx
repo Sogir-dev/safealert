@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import * as SMS from 'expo-sms';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -34,6 +35,10 @@ export default function HomeScreen() {
     allergies: '',
     condition: '',
   });
+  const [trustedContacts, setTrustedContacts] = useState<
+    { name: string; phone: string }[]
+  >([]);
+  const [smsSent, setSmsSent] = useState(false);
 
   useEffect(() => {
     loadSavedData();
@@ -45,7 +50,7 @@ export default function HomeScreen() {
     if (!sosActive || alertSent) return;
 
     if (countdown === 0) {
-      getCurrentLocation(true);
+      triggerEmergencyAlert();
       return;
     }
 
@@ -60,10 +65,12 @@ export default function HomeScreen() {
     const contact = await AsyncStorage.getItem('emergencyContact');
     const medicalInfo = await AsyncStorage.getItem('medicalInfo');
     const fullName = await AsyncStorage.getItem('fullName');
+    const trusted = await AsyncStorage.getItem('trustedContacts');
 
     if (fullName) setSavedFullName(fullName);
     if (contact) setSavedContact(JSON.parse(contact));
     if (medicalInfo) setSavedMedicalInfo(JSON.parse(medicalInfo));
+    if (trusted) setTrustedContacts(JSON.parse(trusted));
   }
 
   async function getCurrentLocation(saveHistory = false): Promise<Coordinates | null> {
@@ -110,6 +117,7 @@ export default function HomeScreen() {
   function activateSOS() {
     setSosActive(true);
     setAlertSent(false);
+    setSmsSent(false);
     setCountdown(3);
     setLatitude('');
     setLongitude('');
@@ -118,6 +126,7 @@ export default function HomeScreen() {
   function cancelSOS() {
     setSosActive(false);
     setAlertSent(false);
+    setSmsSent(false);
     setCountdown(3);
     setLatitude('');
     setLongitude('');
@@ -151,21 +160,10 @@ export default function HomeScreen() {
     Linking.openURL(`https://maps.google.com/?q=${lat},${lng}`);
   }
 
-  async function openWhatsAppMessage() {
-    let lat = latitude;
-    let lng = longitude;
-
-    if (lat === '' || lng === '') {
-      const coords = await getCurrentLocation(false);
-      if (!coords) return;
-
-      lat = coords.latitude;
-      lng = coords.longitude;
-    }
-
+  function buildAlertMessage(lat: string, lng: string) {
     const mapLink = `https://maps.google.com/?q=${lat},${lng}`;
 
-    const message = `
+    return `
 🚨 EMERGENCY SOS ALERT 🚨
 
 My name is ${savedFullName || 'Not set'}.
@@ -189,8 +187,54 @@ ${new Date().toLocaleString()}
 
 Please contact me or emergency services immediately.
 `;
+  }
 
-    Linking.openURL(`whatsapp://send?text=${encodeURIComponent(message)}`);
+  async function openWhatsAppMessage() {
+    let lat = latitude;
+    let lng = longitude;
+
+    if (lat === '' || lng === '') {
+      const coords = await getCurrentLocation(false);
+      if (!coords) return;
+
+      lat = coords.latitude;
+      lng = coords.longitude;
+    }
+
+    Linking.openURL(
+      `whatsapp://send?text=${encodeURIComponent(buildAlertMessage(lat, lng))}`
+    );
+  }
+
+  async function triggerEmergencyAlert() {
+    const coords = await getCurrentLocation(true);
+    if (!coords) return;
+
+    const recipients = [
+      savedContact.phone,
+      ...trustedContacts.map((c) => c.phone),
+    ].filter((phone) => phone.trim() !== '');
+
+    if (recipients.length === 0) {
+      Alert.alert(
+        'No Contacts Saved',
+        'Add an emergency contact or trusted contact in Profile to auto-send an SMS alert.'
+      );
+      return;
+    }
+
+    const isAvailable = await SMS.isAvailableAsync();
+    if (!isAvailable) {
+      Alert.alert('SMS Unavailable', 'This device cannot send SMS messages.');
+      return;
+    }
+
+    const message = buildAlertMessage(coords.latitude, coords.longitude);
+    const { result } = await SMS.sendSMSAsync(recipients, message);
+
+    if (result === 'sent' || result === 'unknown') {
+      setSmsSent(true);
+    }
   }
 
   async function loadUserGreeting() {
@@ -276,7 +320,13 @@ Please contact me or emergency services immediately.
           ) : (
             <>
               <Text style={styles.alertText}>
-                Alert sent to {savedContact.name || 'No contact'}
+                {smsSent
+                  ? `SMS alert sent to ${savedContact.name || 'contact'}${
+                      trustedContacts.length > 0
+                        ? ` and ${trustedContacts.length} trusted contact(s)`
+                        : ''
+                    }`
+                  : 'Could not auto-send SMS. Use WhatsApp below or add contacts in Profile.'}
               </Text>
 
               <Text style={styles.alertText}>
@@ -286,6 +336,15 @@ Please contact me or emergency services immediately.
               <TouchableOpacity style={styles.mapButton} onPress={openMaps}>
                 <Text style={styles.mapButtonText}>Open Location in Maps</Text>
               </TouchableOpacity>
+
+              {!smsSent && (
+                <TouchableOpacity
+                  style={styles.mapButton}
+                  onPress={triggerEmergencyAlert}
+                >
+                  <Text style={styles.mapButtonText}>Retry SMS Alert</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity style={styles.whatsappButton} onPress={openWhatsAppMessage}>
                 <Text style={styles.whatsappButtonText}>
