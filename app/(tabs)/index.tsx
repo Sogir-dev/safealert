@@ -1,98 +1,524 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
+import { useEffect, useState } from 'react';
+import {
+  Alert,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+type Coordinates = {
+  latitude: string;
+  longitude: string;
+};
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [userName, setUserName] = useState('');
+  const [greeting, setGreeting] = useState('');
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const [sosActive, setSosActive] = useState(false);
+  const [countdown, setCountdown] = useState(3);
+  const [alertSent, setAlertSent] = useState(false);
+
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+
+  const [savedContact, setSavedContact] = useState({ name: '', phone: '' });
+  const [savedFullName, setSavedFullName] = useState('');
+  const [savedMedicalInfo, setSavedMedicalInfo] = useState({
+    bloodGroup: '',
+    allergies: '',
+    condition: '',
+  });
+
+  useEffect(() => {
+    loadSavedData();
+    loadUserGreeting();
+  }, []);
+
+
+  useEffect(() => {
+    if (!sosActive || alertSent) return;
+
+    if (countdown === 0) {
+      getCurrentLocation(true);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setCountdown(countdown - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [sosActive, countdown, alertSent]);
+
+  async function loadSavedData() {
+    const contact = await AsyncStorage.getItem('emergencyContact');
+    const medicalInfo = await AsyncStorage.getItem('medicalInfo');
+    const fullName = await AsyncStorage.getItem('fullName');
+
+    if (fullName) setSavedFullName(fullName);
+    if (contact) setSavedContact(JSON.parse(contact));
+    if (medicalInfo) setSavedMedicalInfo(JSON.parse(medicalInfo));
+  }
+
+  async function getCurrentLocation(saveHistory = false): Promise<Coordinates | null> {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Location permission is required.');
+      return null;
+    }
+
+    const currentLocation = await Location.getCurrentPositionAsync({});
+
+    const lat = currentLocation.coords.latitude.toString();
+    const lng = currentLocation.coords.longitude.toString();
+
+    setLatitude(lat);
+    setLongitude(lng);
+
+    if (saveHistory) {
+      setAlertSent(true);
+      await saveEmergencyHistory(lat, lng);
+    }
+
+    return { latitude: lat, longitude: lng };
+  }
+
+  async function saveEmergencyHistory(lat: string, lng: string) {
+    const newHistory = {
+      contact: savedContact.name || 'No contact',
+      latitude: lat,
+      longitude: lng,
+      time: new Date().toLocaleString(),
+    };
+
+    const oldHistory = await AsyncStorage.getItem('emergencyHistory');
+    const historyArray = oldHistory ? JSON.parse(oldHistory) : [];
+
+    await AsyncStorage.setItem(
+      'emergencyHistory',
+      JSON.stringify([newHistory, ...historyArray])
+    );
+  }
+
+  function activateSOS() {
+    setSosActive(true);
+    setAlertSent(false);
+    setCountdown(3);
+    setLatitude('');
+    setLongitude('');
+  }
+
+  function cancelSOS() {
+    setSosActive(false);
+    setAlertSent(false);
+    setCountdown(3);
+    setLatitude('');
+    setLongitude('');
+  }
+
+  function callEmergencyContact() {
+    if (savedContact.phone === '') {
+      Alert.alert('No Contact', 'Please save an emergency contact in Profile first.');
+      return;
+    }
+
+    Linking.openURL(`tel:${savedContact.phone}`);
+  }
+
+  function callEmergencyNumber(number: string) {
+    Linking.openURL(`tel:${number}`);
+  }
+
+  async function openMaps() {
+    let lat = latitude;
+    let lng = longitude;
+
+    if (lat === '' || lng === '') {
+      const coords = await getCurrentLocation(false);
+      if (!coords) return;
+
+      lat = coords.latitude;
+      lng = coords.longitude;
+    }
+
+    Linking.openURL(`https://maps.google.com/?q=${lat},${lng}`);
+  }
+
+  async function openWhatsAppMessage() {
+    let lat = latitude;
+    let lng = longitude;
+
+    if (lat === '' || lng === '') {
+      const coords = await getCurrentLocation(false);
+      if (!coords) return;
+
+      lat = coords.latitude;
+      lng = coords.longitude;
+    }
+
+    const mapLink = `https://maps.google.com/?q=${lat},${lng}`;
+
+    const message = `
+🚨 EMERGENCY SOS ALERT 🚨
+
+My name is ${savedFullName || 'Not set'}.
+
+I need immediate assistance.
+
+📍 Live Location:
+${mapLink}
+
+👤 Emergency Contact:
+Name: ${savedContact.name || 'Not set'}
+Phone: ${savedContact.phone || 'Not set'}
+
+🩺 Medical Information:
+Blood Group: ${savedMedicalInfo.bloodGroup || 'Not set'}
+Allergies: ${savedMedicalInfo.allergies || 'Not set'}
+Condition: ${savedMedicalInfo.condition || 'Not set'}
+
+⏰ Sent:
+${new Date().toLocaleString()}
+
+Please contact me or emergency services immediately.
+`;
+
+    Linking.openURL(`whatsapp://send?text=${encodeURIComponent(message)}`);
+  }
+
+  async function loadUserGreeting() {
+  const savedProfile = await AsyncStorage.getItem('userProfile');
+
+  if (savedProfile) {
+    const profile = JSON.parse(savedProfile);
+    setUserName(profile.fullName);
+  }
+
+  const hour = new Date().getHours();
+  console.log('Current Hour:', hour);
+
+  if (hour >= 5 && hour < 12) {
+  setGreeting('Good Morning');
+} else if (hour >= 12 && hour < 17) {
+  setGreeting('Good Afternoon');
+} else {
+  setGreeting('Good Evening');
+}
+  }
+
+  return (
+    <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.container}>
+      <View style={{ marginBottom: 25 }}>
+  <Text
+    style={{
+      color: 'white',
+      fontSize: 30,
+      fontWeight: 'bold',
+    }}
+  >
+    👋 {greeting}
+  </Text>
+
+  <Text
+    style={{
+      color: '#60A5FA',
+      fontSize: 24,
+      fontWeight: 'bold',
+      marginTop: 5,
+    }}
+  >
+    {userName}
+  </Text>
+
+  <Text
+    style={{
+      color: '#9CA3AF',
+      marginTop: 8,
+      fontSize: 15,
+    }}
+  >
+    Stay safe. Your emergency tools are ready.
+  </Text>
+</View>
+      <Text style={styles.subtitle}>Emergency help, one tap away.</Text>
+
+      <View style={[styles.statusBanner, sosActive ? styles.statusDanger : styles.statusSafe]}>
+        <Text style={styles.statusText}>
+          {sosActive ? '🔴 EMERGENCY ACTIVE' : '🟢 STATUS: SAFE'}
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.sosButton, sosActive && styles.sosButtonActive]}
+        onPress={activateSOS}
+      >
+        <Text style={styles.sosText}>{sosActive ? 'ACTIVE' : 'SOS'}</Text>
+      </TouchableOpacity>
+
+      {sosActive && (
+        <View style={styles.alertBox}>
+          <Text style={styles.alertTitle}>
+            {alertSent ? 'Alert Sent Successfully' : 'Emergency Mode Activated'}
+          </Text>
+
+          {!alertSent ? (
+            <>
+              <Text style={styles.countdownText}>{countdown}</Text>
+              <Text style={styles.alertText}>Sending alert in {countdown} seconds...</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.alertText}>
+                Alert sent to {savedContact.name || 'No contact'}
+              </Text>
+
+              <Text style={styles.alertText}>
+                Location: {latitude}, {longitude}
+              </Text>
+
+              <TouchableOpacity style={styles.mapButton} onPress={openMaps}>
+                <Text style={styles.mapButtonText}>Open Location in Maps</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.whatsappButton} onPress={openWhatsAppMessage}>
+                <Text style={styles.whatsappButtonText}>
+                  Send Emergency Message on WhatsApp
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          <TouchableOpacity style={styles.cancelButton} onPress={cancelSOS}>
+            <Text style={styles.cancelButtonText}>
+              {alertSent ? 'Reset SOS' : 'Cancel SOS'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={styles.quickActionsGrid}>
+        <TouchableOpacity style={styles.gridActionButton} onPress={callEmergencyContact}>
+          <Text style={styles.gridActionText}>📞</Text>
+          <Text style={styles.gridActionLabel}>Call Contact</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.gridActionButton} onPress={openWhatsAppMessage}>
+          <Text style={styles.gridActionText}>💬</Text>
+          <Text style={styles.gridActionLabel}>WhatsApp</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.gridActionButton} onPress={openMaps}>
+          <Text style={styles.gridActionText}>📍</Text>
+          <Text style={styles.gridActionLabel}>Open Maps</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.gridActionButton}
+          onPress={() => callEmergencyNumber('112')}
+        >
+          <Text style={styles.gridActionText}>🚑</Text>
+          <Text style={styles.gridActionLabel}>Emergency</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Emergency Services</Text>
+
+        <TouchableOpacity style={styles.serviceButton} onPress={() => callEmergencyNumber('112')}>
+          <Text style={styles.serviceButtonText}>🚔 Call Police - 112</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.serviceButton} onPress={() => callEmergencyNumber('112')}>
+          <Text style={styles.serviceButtonText}>🚑 Call Ambulance - 112</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.serviceButton} onPress={() => callEmergencyNumber('112')}>
+          <Text style={styles.serviceButtonText}>🚒 Call Fire Service - 112</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  scrollContainer: {
+    flex: 1,
+    backgroundColor: '#0B1220',
+  },
+  container: {
+    backgroundColor: '#0B1220',
+    padding: 20,
+    paddingTop: 70,
+    paddingBottom: 120,
+  },
+  logo: {
+    fontSize: 40,
+    fontWeight: 'bold',
+    color: 'white',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#D1D5DB',
+    textAlign: 'center',
+    marginBottom: 25,
+  },
+  statusBanner: {
+    padding: 14,
+    borderRadius: 12,
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 25,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  statusSafe: {
+    backgroundColor: '#14532D',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  statusDanger: {
+    backgroundColor: '#7F1D1D',
+  },
+  statusText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  sosButton: {
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: '#DC2626',
+    alignSelf: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 25,
+  },
+  sosButtonActive: {
+    backgroundColor: '#991B1B',
+  },
+  sosText: {
+    color: 'white',
+    fontSize: 36,
+    fontWeight: 'bold',
+  },
+  alertBox: {
+    backgroundColor: '#7F1D1D',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  alertTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  countdownText: {
+    color: 'white',
+    fontSize: 45,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  alertText: {
+    color: '#FECACA',
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  cancelButton: {
+    backgroundColor: '#111827',
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  cancelButtonText: {
+    color: '#FCA5A5',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  card: {
+    backgroundColor: '#1F2937',
+    padding: 18,
+    borderRadius: 15,
+    marginBottom: 15,
+  },
+  cardTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  serviceButton: {
+    backgroundColor: '#111827',
+    padding: 13,
+    borderRadius: 10,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  serviceButtonText: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  mapButton: {
+    backgroundColor: '#2563EB',
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  mapButtonText: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  whatsappButton: {
+    backgroundColor: '#16A34A',
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  whatsappButtonText: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  gridActionButton: {
+    width: '48%',
+    backgroundColor: '#1F2937',
+    padding: 16,
+    borderRadius: 15,
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  gridActionText: {
+    fontSize: 28,
+    marginBottom: 6,
+  },
+  gridActionLabel: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
