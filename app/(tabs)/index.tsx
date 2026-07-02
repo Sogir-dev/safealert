@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
-import { useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -40,11 +41,12 @@ export default function HomeScreen() {
   >([]);
   const [smsSent, setSmsSent] = useState(false);
 
-  useEffect(() => {
-    loadSavedData();
-    loadUserGreeting();
-  }, []);
-
+  useFocusEffect(
+    useCallback(() => {
+      loadSavedData();
+      loadUserGreeting();
+    }, [])
+  );
 
   useEffect(() => {
     if (!sosActive || alertSent) return;
