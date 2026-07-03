@@ -1,16 +1,31 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
-import React from 'react';
+import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 
+function TabIcon({
+  focused,
+  color,
+  name,
+}: {
+  focused: boolean;
+  color: string;
+  name: React.ComponentProps<typeof Ionicons>['name'];
+}) {
+  return (
+    <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+      <Ionicons name={name} size={22} color={color} />
+    </View>
+  );
+}
+
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
 
   const [checkingLogin, setCheckingLogin] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -40,17 +55,32 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarActiveTintColor: '#4ADE80',
+        tabBarInactiveTintColor: '#6B7280',
+        tabBarShowLabel: true,
+        tabBarStyle: {
+          backgroundColor: '#0F172A',
+          borderTopWidth: 1,
+          borderTopColor: '#1F2937',
+          height: 60 + insets.bottom,
+          paddingTop: 10,
+          paddingBottom: insets.bottom + 6,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          marginTop: 2,
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="house.fill" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon focused={focused} color={color} name={focused ? 'home' : 'home-outline'} />
           ),
         }}
       />
@@ -59,8 +89,8 @@ export default function TabLayout() {
         name="history"
         options={{
           title: 'History',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="clock.fill" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon focused={focused} color={color} name={focused ? 'time' : 'time-outline'} />
           ),
         }}
       />
@@ -69,8 +99,12 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="gearshape.fill" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon
+              focused={focused}
+              color={color}
+              name={focused ? 'settings' : 'settings-outline'}
+            />
           ),
         }}
       />
@@ -79,11 +113,28 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="person.fill" color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon
+              focused={focused}
+              color={color}
+              name={focused ? 'person' : 'person-outline'}
+            />
           ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  iconWrap: {
+    width: 42,
+    height: 30,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconWrapActive: {
+    backgroundColor: 'rgba(74, 222, 128, 0.15)',
+  },
+});

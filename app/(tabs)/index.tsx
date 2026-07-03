@@ -1,10 +1,13 @@
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Linking,
   ScrollView,
   StyleSheet,
@@ -41,6 +44,8 @@ export default function HomeScreen() {
   >([]);
   const [smsSent, setSmsSent] = useState(false);
 
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+
   useFocusEffect(
     useCallback(() => {
       loadSavedData();
@@ -62,6 +67,25 @@ export default function HomeScreen() {
 
     return () => clearTimeout(timer);
   }, [sosActive, countdown, alertSent]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: sosActive ? 700 : 1400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [sosActive, pulseAnim]);
 
   async function loadSavedData() {
     const contact = await AsyncStorage.getItem('emergencyContact');
@@ -117,12 +141,17 @@ export default function HomeScreen() {
   }
 
   function activateSOS() {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     setSosActive(true);
     setAlertSent(false);
     setSmsSent(false);
     setCountdown(3);
     setLatitude('');
     setLongitude('');
+  }
+
+  function handleSosTap() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }
 
   function cancelSOS() {
@@ -259,60 +288,82 @@ Please contact me or emergency services immediately.
 }
   }
 
+  const pulseScale = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.55] });
+  const pulseOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
+
   return (
-    <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.container}>
-      <View style={{ marginBottom: 25 }}>
-  <Text
-    style={{
-      color: 'white',
-      fontSize: 30,
-      fontWeight: 'bold',
-    }}
-  >
-    👋 {greeting}
-  </Text>
+    <ScrollView
+      style={styles.scrollContainer}
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.headerRow}>
+        <View style={styles.headerTextBlock}>
+          <Text style={styles.greetingText}>👋 {greeting}</Text>
+          <Text style={styles.userNameText}>{userName || 'Welcome'}</Text>
+          <Text style={styles.taglineText}>Stay safe. Your emergency tools are ready.</Text>
+        </View>
 
-  <Text
-    style={{
-      color: '#60A5FA',
-      fontSize: 24,
-      fontWeight: 'bold',
-      marginTop: 5,
-    }}
-  >
-    {userName}
-  </Text>
+        <View style={styles.headerIconBadge}>
+          <Ionicons name="shield-checkmark" size={26} color="#4ADE80" />
+        </View>
+      </View>
 
-  <Text
-    style={{
-      color: '#9CA3AF',
-      marginTop: 8,
-      fontSize: 15,
-    }}
-  >
-    Stay safe. Your emergency tools are ready.
-  </Text>
-</View>
-      <Text style={styles.subtitle}>Emergency help, one tap away.</Text>
-
-      <View style={[styles.statusBanner, sosActive ? styles.statusDanger : styles.statusSafe]}>
-        <Text style={styles.statusText}>
-          {sosActive ? '🔴 EMERGENCY ACTIVE' : '🟢 STATUS: SAFE'}
+      <View
+        style={[
+          styles.statusBanner,
+          sosActive ? styles.statusDanger : styles.statusSafe,
+        ]}
+      >
+        <Ionicons
+          name={sosActive ? 'warning' : 'shield-checkmark-outline'}
+          size={18}
+          color={sosActive ? '#FCA5A5' : '#4ADE80'}
+        />
+        <Text
+          style={[
+            styles.statusText,
+            { color: sosActive ? '#FCA5A5' : '#4ADE80' },
+          ]}
+        >
+          {sosActive ? 'EMERGENCY ACTIVE' : 'STATUS: SAFE'}
         </Text>
       </View>
 
-      <TouchableOpacity
-        style={[styles.sosButton, sosActive && styles.sosButtonActive]}
-        onPress={activateSOS}
-      >
-        <Text style={styles.sosText}>{sosActive ? 'ACTIVE' : 'SOS'}</Text>
-      </TouchableOpacity>
+      <View style={styles.sosWrapper}>
+        <Animated.View
+          style={[
+            styles.sosPulseRing,
+            { transform: [{ scale: pulseScale }], opacity: pulseOpacity },
+          ]}
+        />
+
+        <TouchableOpacity
+          style={[styles.sosButton, sosActive && styles.sosButtonActive]}
+          onPress={sosActive ? undefined : handleSosTap}
+          onLongPress={sosActive ? undefined : activateSOS}
+          delayLongPress={600}
+          activeOpacity={0.85}
+        >
+          <Ionicons name={sosActive ? 'alert' : 'warning'} size={30} color="white" />
+          <Text style={styles.sosText}>{sosActive ? 'ACTIVE' : 'SOS'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {!sosActive && <Text style={styles.sosHintText}>Press and hold to activate</Text>}
 
       {sosActive && (
         <View style={styles.alertBox}>
-          <Text style={styles.alertTitle}>
-            {alertSent ? 'Alert Sent Successfully' : 'Emergency Mode Activated'}
-          </Text>
+          <View style={styles.alertTitleRow}>
+            <Ionicons
+              name={alertSent ? 'checkmark-circle' : 'time'}
+              size={20}
+              color="#FCA5A5"
+            />
+            <Text style={styles.alertTitle}>
+              {alertSent ? 'Alert Sent Successfully' : 'Emergency Mode Activated'}
+            </Text>
+          </View>
 
           {!alertSent ? (
             <>
@@ -336,6 +387,7 @@ Please contact me or emergency services immediately.
               </Text>
 
               <TouchableOpacity style={styles.mapButton} onPress={openMaps}>
+                <Ionicons name="map-outline" size={16} color="white" />
                 <Text style={styles.mapButtonText}>Open Location in Maps</Text>
               </TouchableOpacity>
 
@@ -344,11 +396,13 @@ Please contact me or emergency services immediately.
                   style={styles.mapButton}
                   onPress={triggerEmergencyAlert}
                 >
+                  <Ionicons name="refresh" size={16} color="white" />
                   <Text style={styles.mapButtonText}>Retry SMS Alert</Text>
                 </TouchableOpacity>
               )}
 
               <TouchableOpacity style={styles.whatsappButton} onPress={openWhatsAppMessage}>
+                <Ionicons name="logo-whatsapp" size={16} color="white" />
                 <Text style={styles.whatsappButtonText}>
                   Send Emergency Message on WhatsApp
                 </Text>
@@ -366,17 +420,23 @@ Please contact me or emergency services immediately.
 
       <View style={styles.quickActionsGrid}>
         <TouchableOpacity style={styles.gridActionButton} onPress={callEmergencyContact}>
-          <Text style={styles.gridActionText}>📞</Text>
+          <View style={[styles.gridIconBadge, { backgroundColor: 'rgba(96, 165, 250, 0.15)' }]}>
+            <Ionicons name="call" size={20} color="#60A5FA" />
+          </View>
           <Text style={styles.gridActionLabel}>Call Contact</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.gridActionButton} onPress={openWhatsAppMessage}>
-          <Text style={styles.gridActionText}>💬</Text>
+          <View style={[styles.gridIconBadge, { backgroundColor: 'rgba(37, 211, 102, 0.15)' }]}>
+            <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
+          </View>
           <Text style={styles.gridActionLabel}>WhatsApp</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.gridActionButton} onPress={openMaps}>
-          <Text style={styles.gridActionText}>📍</Text>
+          <View style={[styles.gridIconBadge, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
+            <Ionicons name="location" size={20} color="#FBBF24" />
+          </View>
           <Text style={styles.gridActionLabel}>Open Maps</Text>
         </TouchableOpacity>
 
@@ -384,24 +444,34 @@ Please contact me or emergency services immediately.
           style={styles.gridActionButton}
           onPress={() => callEmergencyNumber('112')}
         >
-          <Text style={styles.gridActionText}>🚑</Text>
+          <View style={[styles.gridIconBadge, { backgroundColor: 'rgba(248, 113, 113, 0.15)' }]}>
+            <Ionicons name="medkit" size={20} color="#F87171" />
+          </View>
           <Text style={styles.gridActionLabel}>Emergency</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Emergency Services</Text>
+        <View style={styles.sectionHeaderRow}>
+          <View style={[styles.sectionIconBadge, { backgroundColor: 'rgba(248, 113, 113, 0.15)' }]}>
+            <Ionicons name="call-outline" size={18} color="#F87171" />
+          </View>
+          <Text style={styles.cardTitle}>Emergency Services</Text>
+        </View>
 
         <TouchableOpacity style={styles.serviceButton} onPress={() => callEmergencyNumber('112')}>
-          <Text style={styles.serviceButtonText}>🚔 Call Police - 112</Text>
+          <Ionicons name="shield-outline" size={18} color="#60A5FA" />
+          <Text style={styles.serviceButtonText}>Call Police - 112</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.serviceButton} onPress={() => callEmergencyNumber('112')}>
-          <Text style={styles.serviceButtonText}>🚑 Call Ambulance - 112</Text>
+          <Ionicons name="medkit-outline" size={18} color="#F87171" />
+          <Text style={styles.serviceButtonText}>Call Ambulance - 112</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.serviceButton} onPress={() => callEmergencyNumber('112')}>
-          <Text style={styles.serviceButtonText}>🚒 Call Fire Service - 112</Text>
+          <Ionicons name="flame-outline" size={18} color="#FBBF24" />
+          <Text style={styles.serviceButtonText}>Call Fire Service - 112</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -416,75 +486,134 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: '#0B1220',
     padding: 20,
-    paddingTop: 70,
+    paddingTop: 60,
     paddingBottom: 120,
   },
-  logo: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: 'white',
-    textAlign: 'center',
-    marginBottom: 10,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 22,
   },
-  subtitle: {
-    fontSize: 18,
-    color: '#D1D5DB',
-    textAlign: 'center',
-    marginBottom: 25,
+  headerTextBlock: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  greetingText: {
+    color: 'white',
+    fontSize: 26,
+    fontWeight: 'bold',
+  },
+  userNameText: {
+    color: '#60A5FA',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  taglineText: {
+    color: '#9CA3AF',
+    marginTop: 8,
+    fontSize: 14,
+  },
+  headerIconBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: 'rgba(74, 222, 128, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusBanner: {
-    padding: 14,
-    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 25,
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 28,
+    borderWidth: 1,
   },
   statusSafe: {
-    backgroundColor: '#14532D',
+    backgroundColor: 'rgba(22, 163, 74, 0.12)',
+    borderColor: 'rgba(22, 163, 74, 0.35)',
   },
   statusDanger: {
-    backgroundColor: '#7F1D1D',
+    backgroundColor: 'rgba(220, 38, 38, 0.12)',
+    borderColor: 'rgba(220, 38, 38, 0.35)',
   },
   statusText: {
-    color: 'white',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
+    letterSpacing: 0.4,
+  },
+  sosWrapper: {
+    width: 170,
+    height: 170,
+    alignSelf: 'center',
+    marginBottom: 28,
+  },
+  sosPulseRing: {
+    position: 'absolute',
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: '#DC2626',
   },
   sosButton: {
     width: 170,
     height: 170,
     borderRadius: 85,
     backgroundColor: '#DC2626',
-    alignSelf: 'center',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 25,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+    elevation: 8,
   },
   sosButtonActive: {
     backgroundColor: '#991B1B',
   },
+  sosHintText: {
+    color: '#6B7280',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: -18,
+    marginBottom: 20,
+  },
   sosText: {
     color: 'white',
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: 'bold',
+    marginTop: 6,
   },
   alertBox: {
-    backgroundColor: '#7F1D1D',
-    padding: 15,
-    borderRadius: 12,
+    backgroundColor: '#2A1418',
+    padding: 18,
+    borderRadius: 16,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.35)',
+  },
+  alertTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   alertTitle: {
     color: 'white',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   countdownText: {
     color: 'white',
-    fontSize: 45,
+    fontSize: 48,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 10,
   },
   alertText: {
     color: '#FECACA',
@@ -493,11 +622,11 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   cancelButton: {
-    backgroundColor: '#111827',
+    backgroundColor: '#161F2E',
     padding: 12,
     borderRadius: 10,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 14,
     borderWidth: 1,
     borderColor: '#FCA5A5',
   },
@@ -507,36 +636,60 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   card: {
-    backgroundColor: '#1F2937',
+    backgroundColor: '#161F2E',
     padding: 18,
-    borderRadius: 15,
+    borderRadius: 16,
     marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  sectionIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardTitle: {
     color: 'white',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 'bold',
-    marginBottom: 10,
   },
   serviceButton: {
-    backgroundColor: '#111827',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#0F172A',
     padding: 13,
     borderRadius: 10,
     marginTop: 10,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: '#2D3748',
   },
   serviceButtonText: {
     color: 'white',
     fontSize: 15,
     fontWeight: 'bold',
-    textAlign: 'center',
   },
   mapButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: '#2563EB',
     padding: 12,
     borderRadius: 10,
-    alignItems: 'center',
     marginTop: 12,
   },
   mapButtonText: {
@@ -545,10 +698,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   whatsappButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: '#16A34A',
     padding: 12,
     borderRadius: 10,
-    alignItems: 'center',
     marginTop: 10,
   },
   whatsappButtonText: {
@@ -564,17 +720,26 @@ const styles = StyleSheet.create({
   },
   gridActionButton: {
     width: '48%',
-    backgroundColor: '#1F2937',
+    backgroundColor: '#161F2E',
     padding: 16,
-    borderRadius: 15,
+    borderRadius: 16,
     alignItems: 'center',
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: '#1F2937',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  gridActionText: {
-    fontSize: 28,
-    marginBottom: 6,
+  gridIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
   gridActionLabel: {
     color: 'white',
