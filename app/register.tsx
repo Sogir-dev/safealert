@@ -13,31 +13,61 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { generateSalt, hashWithSalt } from '@/utils/auth';
 
 export default function RegisterScreen() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
   const [password, setPassword] = useState('');
   const emailRef = useRef<TextInput>(null);
 const phoneRef = useRef<TextInput>(null);
+const securityQuestionRef = useRef<TextInput>(null);
+const securityAnswerRef = useRef<TextInput>(null);
 const passwordRef = useRef<TextInput>(null);
 const [showPassword, setShowPassword] = useState(false);
 
   async function register() {
-    if (!fullName || !email || !phone || !password) {
+    if (
+      !fullName ||
+      !email ||
+      !phone ||
+      !securityQuestion ||
+      !securityAnswer ||
+      !password
+    ) {
       Alert.alert('Missing Information', 'Please fill all fields.');
       return;
     }
 
-    const user = { fullName, email, phone, password };
+    const passwordSalt = generateSalt();
+    const passwordHash = hashWithSalt(password, passwordSalt);
+
+    const securityAnswerSalt = generateSalt();
+    const securityAnswerHash = hashWithSalt(
+      securityAnswer.trim().toLowerCase(),
+      securityAnswerSalt
+    );
+
+    const user = {
+      fullName,
+      email: email.trim(),
+      phone,
+      passwordSalt,
+      passwordHash,
+      securityQuestion,
+      securityAnswerSalt,
+      securityAnswerHash,
+    };
 
     await AsyncStorage.setItem('safealertUser', JSON.stringify(user));
     await AsyncStorage.setItem(
     'userProfile',
     JSON.stringify({
         fullName,
-        email,
+        email: email.trim(),
         phone,
     })
     );
@@ -88,6 +118,28 @@ const [showPassword, setShowPassword] = useState(false);
         onChangeText={setPhone}
         keyboardType="phone-pad"
         returnKeyType="next"
+        onSubmitEditing={() => securityQuestionRef.current?.focus()}
+        />
+
+      <TextInput
+        ref={securityQuestionRef}
+        style={styles.input}
+        placeholder="Security question e.g. First pet's name?"
+        placeholderTextColor="#9CA3AF"
+        value={securityQuestion}
+        onChangeText={setSecurityQuestion}
+        returnKeyType="next"
+        onSubmitEditing={() => securityAnswerRef.current?.focus()}
+        />
+
+      <TextInput
+        ref={securityAnswerRef}
+        style={styles.input}
+        placeholder="Answer to your security question"
+        placeholderTextColor="#9CA3AF"
+        value={securityAnswer}
+        onChangeText={setSecurityAnswer}
+        returnKeyType="next"
         onSubmitEditing={() => passwordRef.current?.focus()}
         />
 
@@ -115,6 +167,11 @@ const [showPassword, setShowPassword] = useState(false);
         </TouchableOpacity>
         </View>
 
+      <Text style={styles.helperText}>
+        We&apos;ll use this security question to verify it&apos;s you if you ever need to reset
+        your password.
+      </Text>
+
       <TouchableOpacity style={styles.button} onPress={register}>
         <Text style={styles.buttonText}>Create Account</Text>
       </TouchableOpacity>
@@ -131,10 +188,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0B1220', justifyContent: 'center', padding: 25 },
   title: { color: 'white', fontSize: 34, fontWeight: 'bold', textAlign: 'center', marginBottom: 25 },
   input: { backgroundColor: '#111827', color: 'white', padding: 14, borderRadius: 10, marginBottom: 12, borderWidth: 1, borderColor: '#374151' },
+  helperText: { color: '#6B7280', fontSize: 12, marginTop: -4, marginBottom: 12, lineHeight: 16 },
   button: { backgroundColor: '#DC2626', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 10 },
   buttonText: { color: 'white', fontSize: 17, fontWeight: 'bold' },
   link: { color: '#60A5FA', textAlign: 'center', marginTop: 18, fontWeight: 'bold' },
-  
+
   passwordContainer: {
   flexDirection: 'row',
   alignItems: 'center',

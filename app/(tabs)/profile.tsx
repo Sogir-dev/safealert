@@ -1,18 +1,80 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   Image,
+  LayoutAnimation,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
+import { generateSalt, hashWithSalt } from '@/utils/auth';
+
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+function CollapsibleSection({
+  icon,
+  color,
+  title,
+  subtitle,
+  expanded,
+  onToggle,
+  children,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  color: string;
+  title: string;
+  subtitle?: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.sectionHeaderRow}
+        activeOpacity={0.7}
+        onPress={onToggle}
+      >
+        <View style={styles.sectionHeaderLeft}>
+          <View style={[styles.sectionIconBadge, { backgroundColor: `${color}26` }]}>
+            <Ionicons name={icon} size={18} color={color} />
+          </View>
+          <View style={styles.sectionHeaderTextWrap}>
+            <Text style={styles.cardTitle}>{title}</Text>
+            {!expanded && subtitle ? (
+              <Text style={styles.cardSubtitle} numberOfLines={1}>
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+
+        <Ionicons
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={20}
+          color="#6B7280"
+        />
+      </TouchableOpacity>
+
+      {expanded && <View style={styles.sectionBody}>{children}</View>}
+    </View>
+  );
+}
 
 export default function ProfileScreen() {
   const [contactName, setContactName] = useState('');
@@ -41,7 +103,7 @@ const [confirmPassword, setConfirmPassword] = useState('');
 const [showCurrentPassword, setShowCurrentPassword] = useState(false);
 const [showNewPassword, setShowNewPassword] = useState(false);
 const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  
+
 
   const [bloodGroup, setBloodGroup] = useState('');
   const [allergies, setAllergies] = useState('');
@@ -57,6 +119,20 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [trustedContacts, setTrustedContacts] = useState<
     { name: string; phone: string }[]
   >([]);
+
+  const [expandedSections, setExpandedSections] = useState({
+    personal: true,
+    password: false,
+    contact: false,
+    medical: false,
+    trusted: false,
+  });
+
+  function toggleSection(key: keyof typeof expandedSections) {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    Haptics.selectionAsync();
+    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -82,7 +158,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
       setProfileEmail(profile.email || '');
       setProfilePhone(profile.phone || '');
     }
-    
+
 
     const savedProfileImage = await AsyncStorage.getItem('profileImage');
 
@@ -269,14 +345,18 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
           const user = JSON.parse(savedUser);
 
-          if (currentPassword !== user.password) {
+          if (hashWithSalt(currentPassword, user.passwordSalt) !== user.passwordHash) {
             Alert.alert('Incorrect Password', 'Your current password is incorrect.');
             return;
           }
 
+          const passwordSalt = generateSalt();
+          const passwordHash = hashWithSalt(newPassword, passwordSalt);
+
           const updatedUser = {
             ...user,
-            password: newPassword,
+            passwordSalt,
+            passwordHash,
           };
 
           await AsyncStorage.setItem('safealertUser', JSON.stringify(updatedUser));
@@ -288,51 +368,73 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           Alert.alert('Password Updated', 'Your password has been changed successfully.');
         }
 
+  const displayName = profileName || savedFullName || 'Your Name';
+  const initial = displayName.trim().charAt(0).toUpperCase() || 'U';
+
   return (
     <ScrollView
       style={styles.scrollContainer}
       contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.title}>Profile</Text>
-      <Text style={styles.subtitle}>Manage your emergency profile.</Text>
+      <View style={styles.heroBanner} />
 
       <View style={styles.photoSection}>
         {profileImage ? (
             <Image source={{ uri: profileImage }} style={styles.profileImage} />
         ) : (
             <View style={styles.profilePlaceholder}>
-            <Text style={styles.profilePlaceholderText}>👤</Text>
+            <Text style={styles.profilePlaceholderText}>{initial}</Text>
             </View>
         )}
 
-        <TouchableOpacity style={styles.saveButton} onPress={pickProfileImage}>
-            <Text style={styles.saveButtonText}>
-            {profileImage ? 'Change Photo' : 'Choose Photo'}
-            </Text>
-        </TouchableOpacity>
+        <Text style={styles.displayName}>{displayName}</Text>
+        {profileEmail !== '' && (
+          <Text style={styles.displayEmail}>{profileEmail}</Text>
+        )}
 
-        {profileImage !== '' && (
-            <TouchableOpacity
-                style={styles.removePhotoButton}
-                onPress={async () => {
-                await AsyncStorage.removeItem('profileImage');
-                setProfileImage('');
-                }}
-            >
-                <Text style={styles.removePhotoButtonText}>
-                Remove Photo
-                </Text>
-            </TouchableOpacity>
-            )}
+        <View style={styles.statusPill}>
+          <View style={styles.statusDot} />
+          <Text style={styles.statusPillText}>SafeAlert Protected</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Personal Information</Text>
+        <View style={styles.photoButtonRow}>
+            <TouchableOpacity style={styles.photoActionButton} onPress={pickProfileImage}>
+                <Ionicons name="camera-outline" size={16} color="#60A5FA" />
+                <Text style={styles.photoActionButtonText}>
+                {profileImage ? 'Change Photo' : 'Add Photo'}
+                </Text>
+            </TouchableOpacity>
 
+            {profileImage !== '' && (
+                <TouchableOpacity
+                    style={[styles.photoActionButton, styles.photoActionButtonDanger]}
+                    onPress={async () => {
+                    await AsyncStorage.removeItem('profileImage');
+                    setProfileImage('');
+                    }}
+                >
+                    <Ionicons name="trash-outline" size={16} color="#FCA5A5" />
+                    <Text style={[styles.photoActionButtonText, styles.photoActionButtonTextDanger]}>
+                    Remove
+                    </Text>
+                </TouchableOpacity>
+                )}
+        </View>
+        </View>
+
+        <CollapsibleSection
+          icon="person-outline"
+          color="#60A5FA"
+          title="Personal Information"
+          subtitle={profileEmail || profilePhone || undefined}
+          expanded={expandedSections.personal}
+          onToggle={() => toggleSection('personal')}
+        >
           <TextInput
             style={styles.input}
             placeholder="Full name"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor="#6B7280"
             value={profileName}
             onChangeText={setProfileName}
             returnKeyType="next"
@@ -341,7 +443,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           <TextInput
             style={styles.input}
             placeholder="Email address"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor="#6B7280"
             value={profileEmail}
             onChangeText={setProfileEmail}
             keyboardType="email-address"
@@ -351,7 +453,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           <TextInput
             style={styles.input}
             placeholder="Phone number"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor="#6B7280"
             value={profilePhone}
             onChangeText={setProfilePhone}
             keyboardType="phone-pad"
@@ -362,16 +464,20 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           <TouchableOpacity style={styles.saveButton} onPress={updateUserProfile}>
             <Text style={styles.saveButtonText}>Update Profile</Text>
           </TouchableOpacity>
-        </View>
+        </CollapsibleSection>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Change Password</Text>
-
+        <CollapsibleSection
+          icon="lock-closed-outline"
+          color="#A78BFA"
+          title="Change Password"
+          expanded={expandedSections.password}
+          onToggle={() => toggleSection('password')}
+        >
           <View style={styles.passwordContainer}>
             <TextInput
               style={styles.passwordInput}
               placeholder="Current password"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#6B7280"
               value={currentPassword}
               onChangeText={setCurrentPassword}
               secureTextEntry={!showCurrentPassword}
@@ -384,7 +490,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
             >
               <Ionicons
                 name={showCurrentPassword ? 'eye-off' : 'eye'}
-                size={24}
+                size={20}
                 color="#9CA3AF"
               />
             </TouchableOpacity>
@@ -394,7 +500,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
             <TextInput
               style={styles.passwordInput}
               placeholder="New password"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#6B7280"
               value={newPassword}
               onChangeText={setNewPassword}
               secureTextEntry={!showNewPassword}
@@ -407,7 +513,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
             >
               <Ionicons
                 name={showNewPassword ? 'eye-off' : 'eye'}
-                size={24}
+                size={20}
                 color="#9CA3AF"
               />
             </TouchableOpacity>
@@ -417,7 +523,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
             <TextInput
               style={styles.passwordInput}
               placeholder="Confirm new password"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#6B7280"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry={!showConfirmPassword}
@@ -431,7 +537,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
             >
               <Ionicons
                 name={showConfirmPassword ? 'eye-off' : 'eye'}
-                size={24}
+                size={20}
                 color="#9CA3AF"
               />
             </TouchableOpacity>
@@ -440,17 +546,22 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           <TouchableOpacity style={styles.saveButton} onPress={changePassword}>
             <Text style={styles.saveButtonText}>Update Password</Text>
           </TouchableOpacity>
-        </View>
+        </CollapsibleSection>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Emergency Contact</Text>
-
+      <CollapsibleSection
+        icon="call-outline"
+        color="#F87171"
+        title="Emergency Contact"
+        subtitle={contact.name ? `${contact.name} • ${contact.phone}` : undefined}
+        expanded={expandedSections.contact}
+        onToggle={() => toggleSection('contact')}
+      >
         {contact.name === '' ? (
           <>
             <TextInput
               style={styles.input}
               placeholder="Contact name"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#6B7280"
               value={contactName}
               onChangeText={setContactName}
               returnKeyType="next"
@@ -461,7 +572,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
               ref={contactPhoneRef}
               style={styles.input}
               placeholder="Phone number"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#6B7280"
               keyboardType="phone-pad"
               value={contactPhone}
               onChangeText={setContactPhone}
@@ -475,25 +586,41 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           </>
         ) : (
           <>
-            <Text style={styles.cardText}>Name: {contact.name}</Text>
-            <Text style={styles.cardText}>Phone: {contact.phone}</Text>
+            <View style={styles.infoRow}>
+              <Ionicons name="person-outline" size={16} color="#9CA3AF" />
+              <Text style={styles.infoRowText}>{contact.name}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Ionicons name="call-outline" size={16} color="#9CA3AF" />
+              <Text style={styles.infoRowText}>{contact.phone}</Text>
+            </View>
 
             <TouchableOpacity style={styles.editButton} onPress={editContact}>
+              <Ionicons name="create-outline" size={16} color="white" />
               <Text style={styles.editButtonText}>Edit Contact</Text>
             </TouchableOpacity>
           </>
         )}
-      </View>
+      </CollapsibleSection>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Medical Information</Text>
-
+      <CollapsibleSection
+        icon="medkit-outline"
+        color="#FBBF24"
+        title="Medical Information"
+        subtitle={
+          medicalInfo.bloodGroup
+            ? `${medicalInfo.bloodGroup} • ${medicalInfo.allergies}`
+            : undefined
+        }
+        expanded={expandedSections.medical}
+        onToggle={() => toggleSection('medical')}
+      >
         {medicalInfo.bloodGroup === '' ? (
           <>
             <TextInput
               style={styles.input}
               placeholder="Blood group e.g. O+"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#6B7280"
               value={bloodGroup}
               onChangeText={setBloodGroup}
               returnKeyType="next"
@@ -504,7 +631,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
               ref={allergiesRef}
               style={styles.input}
               placeholder="Allergies"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#6B7280"
               value={allergies}
               onChangeText={setAllergies}
               returnKeyType="next"
@@ -515,7 +642,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
               ref={conditionRef}
               style={styles.input}
               placeholder="Medical condition"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor="#6B7280"
               value={condition}
               onChangeText={setCondition}
               returnKeyType="done"
@@ -528,24 +655,43 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           </>
         ) : (
           <>
-            <Text style={styles.cardText}>Blood Group: {medicalInfo.bloodGroup}</Text>
-            <Text style={styles.cardText}>Allergies: {medicalInfo.allergies}</Text>
-            <Text style={styles.cardText}>Condition: {medicalInfo.condition}</Text>
+            <View style={styles.infoRow}>
+              <Ionicons name="water-outline" size={16} color="#9CA3AF" />
+              <Text style={styles.infoRowText}>Blood Group: {medicalInfo.bloodGroup}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Ionicons name="alert-circle-outline" size={16} color="#9CA3AF" />
+              <Text style={styles.infoRowText}>Allergies: {medicalInfo.allergies}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Ionicons name="pulse-outline" size={16} color="#9CA3AF" />
+              <Text style={styles.infoRowText}>Condition: {medicalInfo.condition}</Text>
+            </View>
 
             <TouchableOpacity style={styles.editButton} onPress={editMedicalInfo}>
+              <Ionicons name="create-outline" size={16} color="white" />
               <Text style={styles.editButtonText}>Edit Medical Info</Text>
             </TouchableOpacity>
           </>
         )}
-      </View>
+      </CollapsibleSection>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Trusted Contacts</Text>
-
+      <CollapsibleSection
+        icon="people-outline"
+        color="#34D399"
+        title="Trusted Contacts"
+        subtitle={
+          trustedContacts.length > 0
+            ? `${trustedContacts.length} contact${trustedContacts.length > 1 ? 's' : ''} saved`
+            : undefined
+        }
+        expanded={expandedSections.trusted}
+        onToggle={() => toggleSection('trusted')}
+      >
         <TextInput
           style={styles.input}
           placeholder="Contact Name"
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor="#6B7280"
           value={trustedName}
           onChangeText={setTrustedName}
           returnKeyType="next"
@@ -556,7 +702,7 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           ref={trustedPhoneRef}
           style={styles.input}
           placeholder="Phone Number"
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor="#6B7280"
           keyboardType="phone-pad"
           value={trustedPhone}
           onChangeText={setTrustedPhone}
@@ -568,21 +714,32 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
           <Text style={styles.saveButtonText}>Add Trusted Contact</Text>
         </TouchableOpacity>
 
-        {trustedContacts.map((item, index) => (
-          <View key={index} style={styles.trustedContactItem}>
-            <Text style={styles.cardText}>
-              {item.name} - {item.phone}
-            </Text>
+        {trustedContacts.length > 0 && (
+          <View style={styles.contactList}>
+            {trustedContacts.map((item, index) => (
+              <View key={index} style={styles.contactRow}>
+                <View style={styles.contactAvatar}>
+                  <Text style={styles.contactAvatarText}>
+                    {item.name.trim().charAt(0).toUpperCase() || '?'}
+                  </Text>
+                </View>
 
-            <TouchableOpacity
-              style={styles.deleteButton}
-              onPress={() => deleteTrustedContact(index)}
-            >
-              <Text style={styles.deleteButtonText}>Delete</Text>
-            </TouchableOpacity>
+                <View style={styles.contactInfo}>
+                  <Text style={styles.contactName}>{item.name}</Text>
+                  <Text style={styles.contactPhone}>{item.phone}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.contactDeleteButton}
+                  onPress={() => deleteTrustedContact(index)}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#F87171" />
+                </TouchableOpacity>
+              </View>
+            ))}
           </View>
-        ))}
-      </View>
+        )}
+      </CollapsibleSection>
     </ScrollView>
   );
 }
@@ -593,34 +750,158 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B1220',
   },
   container: {
-    padding: 20,
-    paddingTop: 80,
     paddingBottom: 120,
   },
-  title: {
-    color: 'white',
-    fontSize: 36,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 8,
+  heroBanner: {
+    height: 130,
+    backgroundColor: '#1E293B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#374151',
   },
-  subtitle: {
-    color: '#D1D5DB',
-    fontSize: 16,
+  photoSection: {
+    alignItems: 'center',
+    marginTop: -60,
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  profileImage: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    borderWidth: 4,
+    borderColor: '#0B1220',
+  },
+  profilePlaceholder: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: '#0B1220',
+  },
+  profilePlaceholderText: {
+    fontSize: 42,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  displayName: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 14,
     textAlign: 'center',
-    marginBottom: 25,
+  },
+  displayEmail: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(22, 163, 74, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(22, 163, 74, 0.4)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 12,
+    gap: 6,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#22C55E',
+  },
+  statusPillText: {
+    color: '#4ADE80',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 0.3,
+  },
+  photoButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  photoActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#1F2937',
+    borderWidth: 1,
+    borderColor: '#374151',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  photoActionButtonDanger: {
+    borderColor: 'rgba(220, 38, 38, 0.4)',
+  },
+  photoActionButtonText: {
+    color: '#60A5FA',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  photoActionButtonTextDanger: {
+    color: '#FCA5A5',
   },
   card: {
-    backgroundColor: '#1F2937',
+    backgroundColor: '#161F2E',
+    borderRadius: 16,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 18,
-    borderRadius: 15,
-    marginBottom: 15,
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flexShrink: 1,
+  },
+  sectionHeaderTextWrap: {
+    flexShrink: 1,
+  },
+  sectionIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardTitle: {
     color: 'white',
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: 'bold',
-    marginBottom: 8,
+  },
+  cardSubtitle: {
+    color: '#6B7280',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  sectionBody: {
+    paddingHorizontal: 18,
+    paddingBottom: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#1F2937',
+    paddingTop: 16,
   },
   cardText: {
     color: '#D1D5DB',
@@ -628,14 +909,14 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    backgroundColor: '#111827',
+    backgroundColor: '#0F172A',
     color: 'white',
     padding: 13,
     borderRadius: 10,
     marginBottom: 10,
     fontSize: 15,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: '#2D3748',
   },
   saveButton: {
     backgroundColor: '#16A34A',
@@ -650,83 +931,89 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   editButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#2563EB',
     padding: 12,
     borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 10,
+    marginTop: 6,
   },
   editButtonText: {
     color: 'white',
     fontSize: 15,
     fontWeight: 'bold',
   },
-  trustedContactItem: {
-    backgroundColor: '#111827',
-    padding: 12,
-    borderRadius: 10,
-    marginTop: 10,
-  },
-  deleteButton: {
-    backgroundColor: '#DC2626',
-    padding: 8,
-    borderRadius: 8,
-    marginTop: 8,
+  infoRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    marginBottom: 8,
   },
-  deleteButtonText: {
-    color: 'white',
+  infoRowText: {
+    color: '#D1D5DB',
+    fontSize: 15,
+    flexShrink: 1,
+  },
+  contactList: {
+    marginTop: 14,
+    gap: 10,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    padding: 10,
+    gap: 12,
+  },
+  contactAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#134E4A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contactAvatarText: {
+    color: '#5EEAD4',
+    fontSize: 16,
     fontWeight: 'bold',
   },
+  contactInfo: {
+    flex: 1,
+  },
+  contactName: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  contactPhone: {
+    color: '#9CA3AF',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  contactDeleteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(248, 113, 113, 0.12)',
+  },
 
-  photoSection: {
-  alignItems: 'center',
-  marginBottom: 25,
-},
-
-profileImage: {
-  width: 120,
-  height: 120,
-  borderRadius: 60,
-  marginBottom: 12,
-},
-
-profilePlaceholder: {
-  width: 120,
-  height: 120,
-  borderRadius: 60,
-  backgroundColor: '#1F2937',
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginBottom: 12,
-},
-
-profilePlaceholderText: {
-  fontSize: 50,
-},
-
-removePhotoButton: {
-  backgroundColor: '#DC2626',
-  padding: 12,
-  borderRadius: 10,
-  alignItems: 'center',
-  marginTop: 10,
-  width: 160,
-},
-
-removePhotoButtonText: {
-  color: 'white',
-  fontSize: 15,
-  fontWeight: 'bold',
-},
-
-passwordContainer: {
+  passwordContainer: {
   flexDirection: 'row',
   alignItems: 'center',
-  backgroundColor: '#111827',
+  backgroundColor: '#0F172A',
   borderRadius: 10,
   borderWidth: 1,
-  borderColor: '#374151',
+  borderColor: '#2D3748',
   paddingHorizontal: 12,
   marginBottom: 12,
 },

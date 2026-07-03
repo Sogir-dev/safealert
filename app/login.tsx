@@ -13,6 +13,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { hashWithSalt } from '@/utils/auth';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -29,8 +30,12 @@ export default function LoginScreen() {
     }
 
     const user = JSON.parse(savedUser);
+    const enteredHash = hashWithSalt(password, user.passwordSalt);
 
-    if (email === user.email && password === user.password) {
+    if (
+      email.trim().toLowerCase() === user.email.trim().toLowerCase() &&
+      enteredHash === user.passwordHash
+    ) {
       await AsyncStorage.setItem('isLoggedIn', 'true');
       router.replace('/(tabs)');
     } else {
@@ -95,7 +100,7 @@ export default function LoginScreen() {
 
         <TouchableOpacity onPress={() => router.push('/register')}>
             <Text style={styles.link}>
-            Don't have an account? Register
+            Don&apos;t have an account? Register
             </Text>
         </TouchableOpacity>
         </ScrollView>
