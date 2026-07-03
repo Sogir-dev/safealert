@@ -43,6 +43,8 @@ export default function HomeScreen() {
     { name: string; phone: string }[]
   >([]);
   const [smsSent, setSmsSent] = useState(false);
+  const [smsSending, setSmsSending] = useState(false);
+  const isSendingSmsRef = useRef(false);
 
   const pulseAnim = useRef(new Animated.Value(0)).current;
 
@@ -145,6 +147,7 @@ export default function HomeScreen() {
     setSosActive(true);
     setAlertSent(false);
     setSmsSent(false);
+    setSmsSending(false);
     setCountdown(3);
     setLatitude('');
     setLongitude('');
@@ -158,6 +161,7 @@ export default function HomeScreen() {
     setSosActive(false);
     setAlertSent(false);
     setSmsSent(false);
+    setSmsSending(false);
     setCountdown(3);
     setLatitude('');
     setLongitude('');
@@ -238,33 +242,42 @@ Please contact me or emergency services immediately.
   }
 
   async function triggerEmergencyAlert() {
-    const coords = await getCurrentLocation(true);
-    if (!coords) return;
+    if (isSendingSmsRef.current) return;
+    isSendingSmsRef.current = true;
+    setSmsSending(true);
 
-    const recipients = [
-      savedContact.phone,
-      ...trustedContacts.map((c) => c.phone),
-    ].filter((phone) => phone.trim() !== '');
+    try {
+      const coords = await getCurrentLocation(true);
+      if (!coords) return;
 
-    if (recipients.length === 0) {
-      Alert.alert(
-        'No Contacts Saved',
-        'Add an emergency contact or trusted contact in Profile to auto-send an SMS alert.'
-      );
-      return;
-    }
+      const recipients = [
+        savedContact.phone,
+        ...trustedContacts.map((c) => c.phone),
+      ].filter((phone) => phone.trim() !== '');
 
-    const isAvailable = await SMS.isAvailableAsync();
-    if (!isAvailable) {
-      Alert.alert('SMS Unavailable', 'This device cannot send SMS messages.');
-      return;
-    }
+      if (recipients.length === 0) {
+        Alert.alert(
+          'No Contacts Saved',
+          'Add an emergency contact or trusted contact in Profile to auto-send an SMS alert.'
+        );
+        return;
+      }
 
-    const message = buildAlertMessage(coords.latitude, coords.longitude);
-    const { result } = await SMS.sendSMSAsync(recipients, message);
+      const isAvailable = await SMS.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('SMS Unavailable', 'This device cannot send SMS messages.');
+        return;
+      }
 
-    if (result === 'sent' || result === 'unknown') {
-      setSmsSent(true);
+      const message = buildAlertMessage(coords.latitude, coords.longitude);
+      const { result } = await SMS.sendSMSAsync(recipients, message);
+
+      if (result === 'sent' || result === 'unknown') {
+        setSmsSent(true);
+      }
+    } finally {
+      isSendingSmsRef.current = false;
+      setSmsSending(false);
     }
   }
 
@@ -373,7 +386,9 @@ Please contact me or emergency services immediately.
           ) : (
             <>
               <Text style={styles.alertText}>
-                {smsSent
+                {smsSending
+                  ? 'Sending SMS alert...'
+                  : smsSent
                   ? `SMS alert sent to ${savedContact.name || 'contact'}${
                       trustedContacts.length > 0
                         ? ` and ${trustedContacts.length} trusted contact(s)`
@@ -391,7 +406,7 @@ Please contact me or emergency services immediately.
                 <Text style={styles.mapButtonText}>Open Location in Maps</Text>
               </TouchableOpacity>
 
-              {!smsSent && (
+              {!smsSent && !smsSending && (
                 <TouchableOpacity
                   style={styles.mapButton}
                   onPress={triggerEmergencyAlert}
